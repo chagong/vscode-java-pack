@@ -68,9 +68,10 @@ jobs:
 
         run: |
           # Make the HTTP request
-          response=$(curl --connect-timeout 700 --max-time 600 -s \
+          response=$(curl --connect-timeout 700 --max-time 6000 -s \
               --header "Content-Type: application/json" \
               --request POST \
               --data "$PAYLOAD" \
               ${{ secrets.TRIAGE_FUNCTION_LINK }})
+          sleep 600s
           echo "Response: $response"

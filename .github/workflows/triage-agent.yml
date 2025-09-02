@@ -68,9 +68,9 @@ jobs:
 
         run: |
           # Make the HTTP request
-          response=$(curl -s \
+          response=$(curl --max-time 300 -s \
               --header "Content-Type: application/json" \
               --request POST \
               --data "$PAYLOAD" \
               ${{ secrets.TRIAGE_FUNCTION_LINK }})
-          echo "done."
+          echo "Response: $response"

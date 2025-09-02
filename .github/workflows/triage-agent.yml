@@ -105,7 +105,6 @@ jobs:
           response_body=$(echo "$response" | sed 's/HTTPSTATUS:[0-9]*$//')
 
           echo "HTTP Status Code: $http_code"
-          echo "Response Body: $response_body"
 
           # Validate HTTP status code
           if [ -z "$http_code" ]; then

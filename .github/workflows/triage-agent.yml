@@ -68,7 +68,7 @@ jobs:
 
         run: |
           # Make the HTTP request
-          response=$(curl --connection-time 600 --max-time 600 -s \
+          response=$(curl --connect-timeout 700 --max-time 600 -s \
               --header "Content-Type: application/json" \
               --request POST \
               --data "$PAYLOAD" \

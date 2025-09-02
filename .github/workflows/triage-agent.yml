@@ -73,3 +73,4 @@ jobs:
               --request POST \
               --data "$PAYLOAD" \
               ${{ secrets.TRIAGE_FUNCTION_LINK }})
+          echo "done."

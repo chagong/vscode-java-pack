@@ -176,21 +176,37 @@ jobs:
             if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
               echo "Status response: $response_body"
               
-              # Check if orchestration is complete (assuming status field in JSON response)
-              status=$(echo "$response_body" | grep -o '"status":"[^"]*"' | cut -d'"' -f4)
+              # Check if orchestration is complete (using runtimeStatus field from actual response schema)
+              runtime_status=$(echo "$response_body" | grep -o '"runtimeStatus":"[^"]*"' | cut -d'"' -f4)
               
-              if [ "$status" = "Completed" ] || [ "$status" = "completed" ]; then
+              if [ "$runtime_status" = "Completed" ] || [ "$runtime_status" = "completed" ]; then
                 echo "✅ Triage orchestration completed successfully"
+                # Extract and display output if available
+                output=$(echo "$response_body" | grep -o '"output":[^,}]*' | cut -d':' -f2-)
+                if [ "$output" != "null" ] && [ -n "$output" ]; then
+                  echo "Orchestration output: $output"
+                fi
                 exit 0
-              elif [ "$status" = "Failed" ] || [ "$status" = "failed" ]; then
+              elif [ "$runtime_status" = "Failed" ] || [ "$runtime_status" = "failed" ]; then
                 echo "❌ Triage orchestration failed"
                 echo "Final response: $response_body"
+                # Extract and display output for error details if available
+                output=$(echo "$response_body" | grep -o '"output":[^,}]*' | cut -d':' -f2-)
+                if [ "$output" != "null" ] && [ -n "$output" ]; then
+                  echo "Error details: $output"
+                fi
                 exit 1
-              elif [ "$status" = "Running" ] || [ "$status" = "running" ] || [ "$status" = "Pending" ] || [ "$status" = "pending" ]; then
-                echo "Orchestration still running, waiting..."
+              elif [ "$runtime_status" = "Running" ] || [ "$runtime_status" = "running" ] || [ "$runtime_status" = "Pending" ] || [ "$runtime_status" = "pending" ]; then
+                echo "Orchestration status: $runtime_status, waiting..."
+                # Display last updated time for better monitoring
+                last_updated=$(echo "$response_body" | grep -o '"lastUpdatedAt":"[^"]*"' | cut -d'"' -f4)
+                if [ -n "$last_updated" ]; then
+                  echo "Last updated: $last_updated"
+                fi
                 sleep 5
               else
-                echo "Unknown status: $status, continuing to poll..."
+                echo "Unknown runtime status: $runtime_status, continuing to poll..."
+                echo "Full response: $response_body"
                 sleep 5
               fi
             else

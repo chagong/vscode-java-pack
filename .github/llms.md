@@ -35,4 +35,6 @@ When labeling an issue, follow the rules below per label category:
 - [bug]: Primary label for real bug issues 
 - [enhancement]: Primary label for enhancement issues 
 - [documentation]: Primary label for documentation issues 
-- [question]: Primary label for question issues 
+- [question]: Primary label for question issues
+- [duplicated]: Primary label for duplicated issues
+  

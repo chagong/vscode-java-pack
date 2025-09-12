@@ -30,6 +30,7 @@ When labeling an issue, follow the rules below per label category:
 - Assign label per category.
 - If a category is not applicable or you're unsure, you may skip it.
 - Do not assign multiple labels within the same category, unless explicitly allowed as an exception.
+- When assigning the 'duplicated' label, apply it only if an identical issue exists among the similar issues by checking the symptoms and error messages carefully.
 
 ### Issue Type Labels 
 - [bug]: Primary label for real bug issues 

@@ -30,12 +30,12 @@ When labeling an issue, follow the rules below per label category:
 - Assign label per category.
 - If a category is not applicable or you're unsure, you may skip it.
 - Do not assign multiple labels within the same category, unless explicitly allowed as an exception.
-- When assigning the 'duplicated' label, apply it only if an identical issue exists among the similar issues by checking the symptoms and error messages carefully.
+- When assigning the 'duplicate' label, apply it only if an identical issue exists among the similar issues by checking the symptoms and error messages carefully.
 
 ### Issue Type Labels 
 - [bug]: Primary label for real bug issues 
 - [enhancement]: Primary label for enhancement issues 
 - [documentation]: Primary label for documentation issues 
 - [question]: Primary label for question issues
-- [duplicated]: Primary label for duplicated issues
+- [duplicate]: Primary label for duplicate issues
   

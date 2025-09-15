@@ -155,7 +155,7 @@ jobs:
                 --show-error \
                 --write-out "HTTPSTATUS:%{http_code}" \
                 --request GET \
-                ${{ secrets.TRIAGE_STATUS_ENDPOINT }}/$instance_id 2>&1)
+                "$(echo "${{ secrets.TRIAGE_STATUS_ENDPOINT }}" | sed "s/{instanceId}/$instance_id/")" 2>&1)
             
             curl_exit_code=$?
             set -e  # Re-enable exit on error

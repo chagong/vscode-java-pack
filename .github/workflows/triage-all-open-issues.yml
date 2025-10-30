@@ -7,11 +7,6 @@ on:
         required: false
         default: false
         type: boolean
-      monitor_workflows:
-        description: 'Monitor dispatched workflow status'
-        required: false
-        default: true
-        type: boolean
       max_issues:
         description: 'Maximum number of issues to process (0 = all)'
         required: false
@@ -91,7 +86,6 @@ jobs:
           echo "Skipping actual triage processing"
       
       - name: Trigger triage workflow for issue
-        id: trigger_triage
         if: inputs.dry_run != true
         uses: actions/github-script@v6
         with:
@@ -113,101 +107,17 @@ jobs:
               
               console.log(`✅ Successfully triggered triage workflow for issue #${issueNumber}`);
               
-              // Wait a bit for the workflow to start
-              await new Promise(resolve => setTimeout(resolve, 5000));
-              
-              // Try to find the workflow run that was just triggered
-              console.log(`🔍 Looking for workflow run for issue #${issueNumber}...`);
-              
-              const runs = await github.rest.actions.listWorkflowRuns({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                workflow_id: 'triage-agent.yml',
-                per_page: 10,
-                event: 'workflow_dispatch'
-              });
-              
-              // Find the most recent run that might be ours
-              const recentRun = runs.data.workflow_runs.find(run => 
-                run.status === 'queued' || run.status === 'in_progress' || 
-                (run.status === 'completed' && new Date(run.created_at) > new Date(Date.now() - 60000))
-              );
-              
-              if (recentRun) {
-                console.log(`📋 Found workflow run #${recentRun.run_number} (ID: ${recentRun.id})`);
-                console.log(`   Status: ${recentRun.status}`);
-                console.log(`   Conclusion: ${recentRun.conclusion || 'N/A'}`);
-                console.log(`   URL: ${recentRun.html_url}`);
-                
-                // Store run info for potential monitoring
-                core.setOutput('workflow_run_id', recentRun.id);
-                core.setOutput('workflow_run_url', recentRun.html_url);
-              } else {
-                console.log(`⚠️ Could not find corresponding workflow run for issue #${issueNumber}`);
-              }
-              
             } catch (error) {
               console.error(`❌ Failed to trigger triage workflow for issue #${issueNumber}:`, error);
               core.setFailed(`Failed to process issue #${issueNumber}: ${error.message}`);
             }
       
-      - name: Monitor workflow status (optional)
-        if: inputs.dry_run != true && inputs.monitor_workflows == true && steps.trigger_triage.outputs.workflow_run_id
-        uses: actions/github-script@v6
-        continue-on-error: true
-        with:
-          script: |
-            const runId = '${{ steps.trigger_triage.outputs.workflow_run_id }}';
-            const issueNumber = '${{ matrix.issue_number }}';
-            
-            if (!runId) {
-              console.log(`⚠️ No workflow run ID available for issue #${issueNumber}`);
-              return;
-            }
-            
-            console.log(`⏳ Monitoring workflow run ${runId} for issue #${issueNumber}...`);
-            
-            let attempts = 0;
-            const maxAttempts = 12; // Monitor for up to 2 minutes
-            
-            while (attempts < maxAttempts) {
-              try {
-                const { data: run } = await github.rest.actions.getWorkflowRun({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  run_id: runId
-                });
-                
-                console.log(`   Attempt ${attempts + 1}: Status = ${run.status}, Conclusion = ${run.conclusion || 'N/A'}`);
-                
-                if (run.status === 'completed') {
-                  if (run.conclusion === 'success') {
-                    console.log(`✅ Workflow completed successfully for issue #${issueNumber}`);
-                  } else {
-                    console.log(`❌ Workflow failed for issue #${issueNumber}: ${run.conclusion}`);
-                  }
-                  break;
-                }
-                
-                attempts++;
-                if (attempts < maxAttempts) {
-                  await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10 seconds
-                }
-              } catch (error) {
-                console.error(`Error checking workflow status: ${error.message}`);
-                break;
-              }
-            }
-            
-            if (attempts >= maxAttempts) {
-              console.log(`⏰ Stopped monitoring workflow for issue #${issueNumber} after ${maxAttempts} attempts`);
-            }
-
-      - name: Wait between issues
+      - name: Wait for workflow completion
         if: inputs.dry_run != true
         run: |
-          echo "⏳ Waiting 5 seconds before processing next issue..."
-          sleep 5
+          echo "⏳ Waiting 15 minutes for triage workflow to complete for issue #${{ matrix.issue_number }}..."
+          echo "This allows enough time for the triage workflow to fully process the issue."
+          sleep 900  # 15 minutes = 900 seconds
 
   summary:
     runs-on: ubuntu-latest

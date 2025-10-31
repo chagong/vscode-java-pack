@@ -115,9 +115,9 @@ jobs:
       - name: Wait for workflow completion
         if: inputs.dry_run != true
         run: |
-          echo "⏳ Waiting 15 minutes for triage workflow to complete for issue #${{ matrix.issue_number }}..."
-          echo "This allows enough time for the triage workflow to fully process the issue."
-          sleep 900  # 15 minutes = 900 seconds
+          echo "⏳ Waiting for triage workflow to complete for issue #${{ matrix.issue_number }}..."
+          echo "Timeout: ${{ vars.TRIAGE_AGENT_TIMEOUT }} seconds"
+          sleep ${{ vars.TRIAGE_AGENT_TIMEOUT }}  # Wait for triage workflow completion
 
   summary:
     runs-on: ubuntu-latest

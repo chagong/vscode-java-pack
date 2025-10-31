@@ -1,0 +1,224 @@
+name: AI Triage - Label and Comment on New Issues
+on:
+  issues:
+    types: [opened]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Issue number to triage (manual run). e.g. 123'
+        required: true
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  label_and_comment:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Get issue data
+        id: get_issue
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const eventName = context.eventName;
+            let issue;
+            if (eventName === 'workflow_dispatch') {
+              const inputs = context.payload.inputs || {};
+              const issueNumber = inputs.issue_number || inputs.issueNumber;
+              if (!issueNumber) core.setFailed('Input issue_number is required for manual run.');
+              const { data } = await github.rest.issues.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: parseInt(issueNumber, 10),
+              });
+              issue = data;
+            } else if (context.payload.issue) {
+              issue = context.payload.issue;
+            } else {
+              core.setFailed('No issue information found in the event payload.');
+            }
+            core.setOutput('id', String(issue.number));
+            core.setOutput('user', String((issue.user && issue.user.login) || ''));
+            core.setOutput('title', String(issue.title || ''));
+            core.setOutput('body', String(issue.body || ''));
+            const labelNames = (issue.labels || []).map(label => label.name);
+            core.setOutput('labels', JSON.stringify(labelNames));
+
+      - name: Start Triage Orchestration
+        id: start_orchestration
+        env:
+          PAYLOAD: >-
+            {
+              "authToken": "${{ secrets.GITHUB_TOKEN }}",
+              "repoId": "chagong/vscode-java-pack",
+              "issueData": {
+                "id": ${{ steps.get_issue.outputs.id }},
+                "user": ${{ toJson(steps.get_issue.outputs.user) }},
+                "title": ${{ toJson(steps.get_issue.outputs.title) }},
+                "body":  ${{ toJson(steps.get_issue.outputs.body)  }},
+                "labels": ${{ steps.get_issue.outputs.labels }}
+              },
+              "mode": "DirectUpdate"
+            }
+
+        run: |
+          # Start the durable function orchestration
+          echo "Starting triage orchestration..."
+          echo "Payload size: $(echo "$PAYLOAD" | wc -c) bytes"
+
+          # Make the initial request to start orchestration
+          set +e  # Don't exit on curl failure
+          response=$(curl \
+              --max-time 60 \
+              --connect-timeout 30 \
+              --fail-with-body \
+              --silent \
+              --show-error \
+              --write-out "HTTPSTATUS:%{http_code}" \
+              --header "Content-Type: application/json" \
+              --request POST \
+              --data "$PAYLOAD" \
+              ${{ secrets.TRIAGE_START_ENDPOINT }} 2>&1)
+
+          curl_exit_code=$?
+          set -e  # Re-enable exit on error
+
+          echo "Start orchestration curl exit code: $curl_exit_code"
+
+          # Check if curl command failed
+          if [ $curl_exit_code -ne 0 ]; then
+            echo "❌ Failed to start orchestration with exit code: $curl_exit_code"
+            echo "Response: $response"
+            exit 1
+          fi
+
+          # Extract HTTP status code and response body
+          http_code=$(echo "$response" | grep -o "HTTPSTATUS:[0-9]*" | cut -d: -f2)
+          response_body=$(echo "$response" | sed 's/HTTPSTATUS:[0-9]*$//')
+
+          echo "HTTP Status Code: $http_code"
+
+          # Validate HTTP status code
+          if [ -z "$http_code" ]; then
+            echo "❌ Failed to extract HTTP status code from response"
+            echo "Raw response: $response"
+            exit 1
+          fi
+
+          # Check if the orchestration started successfully
+          if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
+            echo "✅ Triage orchestration started successfully"
+            echo "Response: $response_body"
+            
+            # Extract instance ID from response (assuming JSON response with instanceId field)
+            instance_id=$(echo "$response_body" | grep -o '"instanceId":"[^"]*"' | cut -d'"' -f4)
+            if [ -z "$instance_id" ]; then
+              echo "❌ Failed to extract instance ID from response"
+              echo "Response body: $response_body"
+              exit 1
+            fi
+            
+            echo "Instance ID: $instance_id"
+            echo "instance_id=$instance_id" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Failed to start orchestration with status code: $http_code"
+            echo "Response: $response_body"
+            exit 1
+          fi
+
+      - name: Poll Orchestration Status
+        id: poll_status
+        run: |
+          # Poll the orchestration status until completion
+          instance_id="${{ steps.start_orchestration.outputs.instance_id }}"
+          echo "Polling status for instance: $instance_id"
+          
+          max_attempts=120  # Maximum number of polling attempts (10 minutes with 5-second intervals)
+          attempt=0
+          
+          while [ $attempt -lt $max_attempts ]; do
+            attempt=$((attempt + 1))
+            echo "Polling attempt $attempt/$max_attempts..."
+            
+            # Make status check request
+            set +e  # Don't exit on curl failure
+            # Safely replace the {instanceId} placeholder using bash parameter expansion
+            status_url="${{ secrets.TRIAGE_STATUS_ENDPOINT }}"
+            status_url="${status_url//\{instanceId\}/$instance_id}"
+            
+            response=$(curl \
+                --max-time 30 \
+                --connect-timeout 15 \
+                --fail-with-body \
+                --silent \
+                --show-error \
+                --write-out "HTTPSTATUS:%{http_code}" \
+                --request GET \
+                "$status_url" 2>&1)
+            
+            curl_exit_code=$?
+            set -e  # Re-enable exit on error
+            
+            if [ $curl_exit_code -ne 0 ]; then
+              echo "❌ Status check failed with exit code: $curl_exit_code"
+              echo "Response: $response"
+              sleep 5
+              continue
+            fi
+            
+            # Extract HTTP status code and response body
+            http_code=$(echo "$response" | grep -o "HTTPSTATUS:[0-9]*" | cut -d: -f2)
+            response_body=$(echo "$response" | sed 's/HTTPSTATUS:[0-9]*$//')
+            
+            echo "Status check HTTP code: $http_code"
+            
+            if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
+              echo "Status response: $response_body"
+              
+              # Check if orchestration is complete (using runtimeStatus field from actual response schema)
+              runtime_status=$(echo "$response_body" | grep -o '"runtimeStatus":"[^"]*"' | cut -d'"' -f4)
+              
+              if [ "$runtime_status" = "Completed" ] || [ "$runtime_status" = "completed" ]; then
+                echo "✅ Triage orchestration completed successfully"
+                # Extract and display output if available
+                output=$(echo "$response_body" | grep -o '"output":[^,}]*' | cut -d':' -f2-)
+                if [ "$output" != "null" ] && [ -n "$output" ]; then
+                  echo "Orchestration output: $output"
+                fi
+                exit 0
+              elif [ "$runtime_status" = "Failed" ] || [ "$runtime_status" = "failed" ]; then
+                echo "❌ Triage orchestration failed"
+                echo "Final response: $response_body"
+                # Extract and display output for error details if available
+                output=$(echo "$response_body" | grep -o '"output":[^,}]*' | cut -d':' -f2-)
+                if [ "$output" != "null" ] && [ -n "$output" ]; then
+                  echo "Error details: $output"
+                fi
+                exit 1
+              elif [ "$runtime_status" = "Running" ] || [ "$runtime_status" = "running" ] || [ "$runtime_status" = "Pending" ] || [ "$runtime_status" = "pending" ]; then
+                echo "Orchestration status: $runtime_status, waiting..."
+                # Display last updated time for better monitoring
+                last_updated=$(echo "$response_body" | grep -o '"lastUpdatedAt":"[^"]*"' | cut -d'"' -f4)
+                if [ -n "$last_updated" ]; then
+                  echo "Last updated: $last_updated"
+                fi
+                sleep 5
+              else
+                echo "Unknown runtime status: $runtime_status, continuing to poll..."
+                echo "Full response: $response_body"
+                sleep 5
+              fi
+            else
+              echo "❌ Status check returned HTTP $http_code"
+              echo "Response: $response_body"
+              sleep 5
+            fi
+          done
+          
+          echo "❌ Orchestration polling timed out after $max_attempts attempts"
+          exit 1

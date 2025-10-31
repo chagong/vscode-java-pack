@@ -9,7 +9,8 @@ on:
         required: true
 
 run-name: >-
-  AI Triage for Issue #${{ github.event.issue.number || github.event.inputs.issue_number }}
+  ${{ github.event_name == 'workflow_dispatch' && format('Manual Triage - Issue #{0}', github.event.inputs.issue_number)
+  || format('Auto Triage - Issue #{0}: {1}', github.event.issue.number, github.event.issue.title) }}
 
 permissions:
   issues: write

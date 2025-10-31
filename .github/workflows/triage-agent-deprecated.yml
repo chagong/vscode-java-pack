@@ -1,4 +1,4 @@
-name: AI Triage - Label and Comment on New Issues
+name: (deprecated) AI Triage - Label and Comment on New Issues
 on:
   issues:
     types: [opened]
